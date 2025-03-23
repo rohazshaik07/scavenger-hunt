@@ -13,16 +13,38 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Connect to MongoDB with error handling
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => {
+// Optimize MongoDB connection for serverless
+let mongooseConnection = null;
+
+async function connectToMongoDB() {
+  if (mongooseConnection) {
+    console.log('Reusing existing MongoDB connection');
+    return mongooseConnection;
+  }
+
+  try {
+    console.log('Connecting to MongoDB...');
+    mongooseConnection = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('Connected to MongoDB');
+    return mongooseConnection;
+  } catch (err) {
     console.error('MongoDB connection error:', err.message);
-    process.exit(1);
-  });
+    throw err;
+  }
+}
+
+// Connect to MongoDB before handling requests
+app.use(async (req, res, next) => {
+  try {
+    await connectToMongoDB();
+    next();
+  } catch (err) {
+    res.status(500).send('Failed to connect to MongoDB: ' + err.message);
+  }
+});
 
 // Test endpoint to check MongoDB connection
 app.get('/test-db', async (req, res) => {
@@ -65,7 +87,7 @@ app.get('/scan', scanLimiter, async (req, res) => {
     // No cookie, show registration form
     res.send(`
       <h1>Enter Your Registration Number</h1>
-      <form action="/register" method="post">
+      <form action="/api/register" method="post">
         <input type="text" name="registrationNumber" placeholder="e.g., A12345" required />
         <input type="hidden" name="code" value="${code}" />
         <button type="submit">Submit</button>
@@ -89,7 +111,7 @@ app.post('/register', async (req, res) => {
   }
 
   // Set cookie and log scan
-  res.cookie('registrationNumber', registrationNumber, { httpOnly: true, secure: false }); // secure: false for local testing
+  res.cookie('registrationNumber', registrationNumber, { httpOnly: true, secure: true });
   await logScan(registrationNumber, code);
   res.send(await showProgress(registrationNumber));
 });
@@ -126,5 +148,5 @@ app.use((err, req, res, next) => {
   res.status(500).send('Something broke! Error: ' + err.message);
 });
 
-// Start server for local development
-app.listen(3000, () => console.log('Server running on port 3000'));
+// Export the app for Vercel
+module.exports = app;
