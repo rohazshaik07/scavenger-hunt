@@ -2,7 +2,7 @@
   "name": "scavenger-hunt",
   "version": "1.0.0",
   "scripts": {
-    "start": "node server.js"
+    "start": "node api/index.js"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

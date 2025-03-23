@@ -47,7 +47,7 @@ app.use(async (req, res, next) => {
 });
 
 // Test endpoint to check MongoDB connection
-app.get('/test-db', async (req, res) => {
+app.get('/api/test-db', async (req, res) => {
   try {
     await mongoose.connection.db.admin().ping();
     res.send('MongoDB connection successful!');
@@ -74,7 +74,7 @@ const scanLimiter = rateLimit({
 });
 
 // Scan endpoint
-app.get('/scan', scanLimiter, async (req, res) => {
+app.get('/api/scan', scanLimiter, async (req, res) => {
   const { code } = req.query;
   const registrationNumber = req.cookies.registrationNumber;
 
@@ -102,7 +102,7 @@ app.get('/scan', scanLimiter, async (req, res) => {
 });
 
 // Register endpoint
-app.post('/register', async (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { registrationNumber, code } = req.body;
 
   // Validate registration number (basic example: alphanumeric)
@@ -111,7 +111,11 @@ app.post('/register', async (req, res) => {
   }
 
   // Set cookie and log scan
-  res.cookie('registrationNumber', registrationNumber, { httpOnly: true, secure: true });
+  res.cookie('registrationNumber', registrationNumber, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // Enable secure cookies in production
+    sameSite: 'lax',
+  });
   await logScan(registrationNumber, code);
   res.send(await showProgress(registrationNumber));
 });
