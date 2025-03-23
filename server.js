@@ -9,8 +9,7 @@ app.use(express.urlencoded({ extended: true })); // For form data
 app.use(cookieParser());
 
 // Connect to MongoDB (replace with your connection string)
-mongoose.connect('mongodb+srv://shaikrohaz:hk58a9pSW7e3zjYp@scavenger-hunt.b3vtw.mongodb.net/?retryWrites=true&w=majority&appName=scavenger-hunt', {
-  useNewUrlParser: true,
+mongoose.connect('your-mongodb-connection-string', {  useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => console.log('Connected to MongoDB'));
 
