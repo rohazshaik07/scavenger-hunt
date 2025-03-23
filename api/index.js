@@ -13,7 +13,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Optimize MongoDB connection for serverless
+// ─── MongoDB Connection Setup ────────────────────────────────────────────────
 let mongooseConnection = null;
 
 async function connectToMongoDB() {
@@ -36,7 +36,7 @@ async function connectToMongoDB() {
   }
 }
 
-// Connect to MongoDB before handling requests
+// Middleware to ensure MongoDB connection
 app.use(async (req, res, next) => {
   try {
     await connectToMongoDB();
@@ -46,7 +46,8 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Test endpoint to check MongoDB connection
+// ─── Routes ─────────────────────────────────────────────────────────────────
+// Test endpoint
 app.get('/api/test-db', async (req, res) => {
   try {
     await mongoose.connection.db.admin().ping();
@@ -56,101 +57,87 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Participant Schema
+// Participant Model
 const participantSchema = new mongoose.Schema({
   registrationNumber: String,
-  components: [String], // Array of scanned QR codes
+  components: [String],
 });
 const Participant = mongoose.model('Participant', participantSchema);
 
-// Valid QR codes
+// Scan Endpoint
 const validCodes = ['abc123', 'def456', 'ghi789', 'jkl012', 'mno345'];
+const scanLimiter = rateLimit({ windowMs: 60000, max: 1 });
 
-// Rate limiter to prevent rapid scans
-const scanLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 1, // 1 scan per minute per IP
-  message: 'Please wait a minute before scanning again.',
-});
-
-// Scan endpoint
 app.get('/api/scan', scanLimiter, async (req, res) => {
   const { code } = req.query;
-  const registrationNumber = req.cookies.registrationNumber;
+  const regNum = req.cookies.registrationNumber;
 
-  // Check if QR code is valid
   if (!validCodes.includes(code)) {
     return res.status(400).send('<h1>Invalid QR Code</h1>');
   }
 
-  if (!registrationNumber) {
-    // No cookie, show registration form
+  if (!regNum) {
     res.send(`
-      <h1>Enter Your Registration Number</h1>
+      <h1>Registration Required</h1>
       <form action="/api/register" method="post">
-        <input type="text" name="registrationNumber" placeholder="e.g., A12345" required />
-        <input type="hidden" name="code" value="${code}" />
+        <input type="text" name="registrationNumber" placeholder="A12345" required>
+        <input type="hidden" name="code" value="${code}">
         <button type="submit">Submit</button>
       </form>
-      <p><strong>Important:</strong> Please enable cookies to participate in the scavenger hunt.</p>
     `);
   } else {
-    // Cookie exists, log scan and show progress
-    await logScan(registrationNumber, code);
-    res.send(await showProgress(registrationNumber));
+    await logScan(regNum, code);
+    res.send(await showProgress(regNum));
   }
 });
 
-// Register endpoint
+// Registration Endpoint
 app.post('/api/register', async (req, res) => {
   const { registrationNumber, code } = req.body;
-
-  // Validate registration number (basic example: alphanumeric)
+  
   if (!registrationNumber.match(/^[A-Z0-9]+$/)) {
-    return res.status(400).send('<h1>Invalid Registration Number</h1><p>Use only letters and numbers.</p>');
+    return res.status(400).send('Invalid registration number format');
   }
 
-  // Set cookie and log scan
   res.cookie('registrationNumber', registrationNumber, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Enable secure cookies in production
-    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
   });
+  
   await logScan(registrationNumber, code);
   res.send(await showProgress(registrationNumber));
 });
 
-// Helper: Log a scan
-async function logScan(registrationNumber, code) {
-  let participant = await Participant.findOne({ registrationNumber });
-  if (!participant) {
-    participant = new Participant({
-      registrationNumber,
-      components: [],
-    });
-  }
+// ─── Helpers ────────────────────────────────────────────────────────────────
+async function logScan(regNum, code) {
+  let participant = await Participant.findOne({ registrationNumber: regNum }) || 
+                    new Participant({ registrationNumber: regNum, components: [] });
+  
   if (!participant.components.includes(code)) {
     participant.components.push(code);
     await participant.save();
   }
 }
 
-// Helper: Show progress
-async function showProgress(registrationNumber) {
-  const participant = await Participant.findOne({ registrationNumber });
-  const progress = participant.components.length;
+async function showProgress(regNum) {
+  const participant = await Participant.findOne({ registrationNumber: regNum });
+  const progress = participant?.components?.length || 0;
+  
   return `
-    <h1>Component Collected!</h1>
-    <p>Progress: ${progress}/5</p>
-    ${progress === 5 ? '<p><strong>Congratulations! You’ve completed the hunt!</strong></p>' : '<p>Scan the next QR code!</p>'}
+    <h1>Progress: ${progress}/5</h1>
+    ${progress >= 5 ? '<p>Congratulations! You won!</p>' : '<p>Keep scanning!</p>'}
   `;
 }
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Server error:', err.message);
-  res.status(500).send('Something broke! Error: ' + err.message);
-});
-
-// Export the app for Vercel
+// ─── Server Setup ───────────────────────────────────────────────────────────
+// Export for Vercel
 module.exports = app;
+
+// Start locally when not in production
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
