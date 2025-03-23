@@ -1,19 +1,40 @@
+require('dotenv').config();
+console.log('MONGODB_URI:', process.env.MONGODB_URI);
+
 const express = require('express');
 const mongoose = require('mongoose');
+mongoose.set('strictQuery', true); // Set strictQuery after importing mongoose
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // For form data
 app.use(cookieParser());
 
-// Connect to MongoDB (replace with your connection string)
-mongoose.connect('your-mongodb-connection-string', {  useNewUrlParser: true,
+// Connect to MongoDB with error handling
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
   useUnifiedTopology: true,
-}).then(() => console.log('Connected to MongoDB'));
+})
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => {
+    console.error('MongoDB connection error:', err.message);
+    process.exit(1); // Exit if connection fails
+  });
 
-// Participant Schema 
+// Test endpoint to check MongoDB connection
+app.get('/test-db', async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.send('MongoDB connection successful!');
+  } catch (err) {
+    res.status(500).send('MongoDB connection failed: ' + err.message);
+  }
+});
+
+// Participant Schema
 const participantSchema = new mongoose.Schema({
   registrationNumber: String,
   components: [String], // Array of scanned QR codes
@@ -98,6 +119,12 @@ async function showProgress(registrationNumber) {
     ${progress === 5 ? '<p><strong>Congratulations! You’ve completed the hunt!</strong></p>' : '<p>Scan the next QR code!</p>'}
   `;
 }
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.message);
+  res.status(500).send('Something broke! Error: ' + err.message);
+});
 
 // Start server
 app.listen(3000, () => console.log('Server running on port 3000'));
